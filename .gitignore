@@ -1,0 +1,17 @@
+# Pliki generowane przez Pythona
+__pycache__/
+*.py[cod]
+
+# Srodowiska wirtualne
+.venv/
+venv/
+
+# Ustawienia PyCharma
+.idea/
+
+# Lokalne materialy i foldery probne
+Do_posortowania/
+Test_wejscie/
+Test_wyjscie/
+Test_przenoszenia/
+Test_uporzadkowane/
