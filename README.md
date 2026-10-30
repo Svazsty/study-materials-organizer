@@ -1,15 +1,26 @@
 # Study Materials Organizer
 
-A small Python command-line tool that organizes study materials using information stored in filenames. It previews changes by default and moves files only when `--apply` is provided.
+A lightweight Python desktop application for organizing
+university study materials based on filenames.
+
+The application provides both a graphical interface (Tkinter)
+and a command-line interface (CLI).
+
+Users can preview planned file operations before moving
+files into organized semester directories.
 
 ## Features
 
-- Reads files directly from one source folder.
-- Recognizes lecture and exercise filenames, dates, subject codes, and exercise groups.
-- Builds subject and session folders while preserving filenames.
-- Handles existing session folders with part letters such as `W02A`.
-- Skips existing destination paths and files marked `do_weryfikacji`.
-- Prints a summary of checked, planned, moved, skipped, and failed files.
+- Graphical interface built with Tkinter.
+- Preview file operations before applying changes.
+- Organize files by subject, date, class type and group.
+- Background file operations using threading.
+- Progress bar based on processed files.
+- Automatically remember recently selected directories.
+- Detect unknown subjects and add them through the GUI.
+- Store subject definitions in subjects.json.
+- Prevent overwriting existing destination files.
+- Command-line interface support.
 
 ## Requirements
 
@@ -17,6 +28,47 @@ A small Python command-line tool that organizes study materials using informatio
 - No third-party packages are required; the tool uses the Python standard library.
 
 The source folder must already exist. Run the following commands from the directory containing `organizer_materials.py`.
+
+
+## Graphical Interface
+
+Launch the desktop application:
+
+```powershell
+python gui.py
+```
+
+### How to use
+
+1. Select a source directory containing study materials.
+2. Select the destination semester directory.
+3. Click **Preview** to review planned file operations.
+4. Click **Apply Moves** to move files after confirmation.
+
+The application moves files rather than copying them. Existing destination files are not overwritten.
+
+### Progress and background operations
+
+File operations run in a background thread to keep the GUI responsive.
+
+The progress bar displays the percentage of processed files, not the percentage of bytes transferred.
+
+### Saved settings
+
+The application automatically remembers the last selected source and destination directories.
+
+Settings are stored in:
+
+`~/.study-materials-organizer/settings.json`
+
+### Subject management
+
+Subject definitions are stored in `subjects.json`.
+
+When Preview detects an unknown subject code, the application can ask for its full name and save it for future use.
+
+After adding a subject, run Preview again to update the planned file operations.
+
 
 ## Usage
 
@@ -112,7 +164,10 @@ Examples:
 | `ti` | Technologie informacyjne |
 | `zarzadzanie` | Podstawy zarządzania |
 
-Edit the `subject_folders` dictionary to customize this mapping.
+Subjects are loaded from subjects.json.
+
+New subjects can be added through the graphical interface
+or manually by editing subjects.json.
 
 ## Destination structure
 
@@ -139,7 +194,6 @@ An existing common session folder such as `16.10.2026_W02` takes priority. If it
 - Existing destination paths are skipped without comparing file contents.
 - Exercise groups are currently limited to `G1` and `G2`.
 - General materials without a session date require manual organization.
-- The current interface is command-line only.
 
 Invalid or unsupported filenames count as skipped files. Failed move operations count as errors in the summary.
 
@@ -151,7 +205,21 @@ Run the automated tests:
 python -m unittest -v
 ```
 
-The five tests cover a valid date, an invalid date, preview behavior, moving a file with its contents preserved, and skipping an existing destination without changing either file. File-operation tests use temporary directories.
+The project currently includes 10 automated tests.
+
+The tests cover:
+- Date validation.
+- Preview operations without modifying files.
+- Moving files and preserving their contents.
+- Preventing overwriting existing files.
+- Progress callback reporting.
+- Unknown subject detection.
+- Adding new subjects.
+- Preventing duplicate subject codes.
+- Rejecting invalid subject names.
+
+File operation tests use temporary directories to avoid
+modifying real study materials.
 
 ## License
 

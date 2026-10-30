@@ -97,5 +97,51 @@ class TestOrganizeFiles(unittest.TestCase):
 
             self.assertEqual(target_file.read_text(encoding="utf-8"), "stare dane")
             self.assertEqual(source_file.read_text(encoding="utf-8"), "nowe dane")
+
+    def test_progress_callback(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+
+            (source / "28.10.2026_W01_algebra.md").write_text("test")
+            (source / "29.10.2026_W02_algebra.md").write_text("test")
+
+            progress_values = []
+
+            with redirect_stdout(StringIO()):
+                organize_files(
+                    source,
+                    target,
+                    False,
+                    {"algebra": "Algebra liniowa"},
+                    progress_callback = progress_values.append
+                )
+
+    def test_unknown_subject_callback(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+
+            source_file = source / "15.03.2027_W01_fizyka_notatki.txt"
+            source_file.write_text("test", encoding="utf-8")
+
+            unknown_subjects = []
+
+            with redirect_stdout(StringIO()):
+                organize_files(
+                    source,
+                    target,
+                    False,
+                    {"algebra": "Algebra liniowa"},
+                    unknown_subject_callback = unknown_subjects.append
+                )
+            self.assertEqual(unknown_subjects, ["fizyka"])
+            self.assertTrue(source_file.exists())
+            self.assertFalse(target.exists())
+
 if __name__ == "__main__":
     unittest.main()
