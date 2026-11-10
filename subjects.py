@@ -1,7 +1,9 @@
 import json
+import re
 from pathlib import Path
 
 SUBJECTS_FILE = Path(__file__).with_name("subjects.json")
+
 
 def load_subjects():
     with SUBJECTS_FILE.open("r", encoding="utf-8") as file:
@@ -12,7 +14,18 @@ def load_subjects():
 
     return subjects
 
+
 def add_subject(code, name):
+    if not isinstance(code, str) or not re.fullmatch(r"[a-zA-Z0-9_-]+", code):
+        raise ValueError(
+            "Subject code must be a string containing only letters, "
+            "numbers, underscores, or hyphens"
+        )
+
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Subject name must be a non-empty string")
+    name = name.strip()
+
     subjects = load_subjects()
 
     forbidden_chars = '<>:"/\\|?*'
@@ -33,3 +46,34 @@ def add_subject(code, name):
     )
 
     return True  # Subject added successfully
+
+
+def delete_subject(code):
+    subjects = load_subjects()
+
+    if code not in subjects:
+        return False  # Subject code does not exist
+
+    from semesters import SEMESTERS_FILE
+
+    if SEMESTERS_FILE.exists():
+        data = json.loads(SEMESTERS_FILE.read_text(encoding="utf-8"))
+
+        if not isinstance(data, dict) or not isinstance(data.get("semesters"), dict):
+            raise ValueError("Invalid semesters configuration")
+
+        for semester_id, semester in data["semesters"].items():
+            if code in semester.get("subjects", []):
+                raise ValueError(
+                    f"Subject is assigned to semester '{semester_id}"
+                    "'. Remove it from the semester before deleting."
+                )
+
+    del subjects[code]
+
+    SUBJECTS_FILE.write_text(
+        json.dumps(subjects, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
+    return True
