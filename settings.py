@@ -3,6 +3,7 @@ from pathlib import Path
 
 SETTINGS_FILE = Path.home() / ".study-materials-organizer" / "settings.json"
 
+
 def save_settings(source, target):
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     data = {
@@ -13,6 +14,7 @@ def save_settings(source, target):
     json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8"
     )
+
 
 def load_settings():
     try:

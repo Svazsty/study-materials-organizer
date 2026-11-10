@@ -1,13 +1,14 @@
-from pathlib import Path
-from datetime import datetime
-import shutil
-import re
 import argparse
-from subjects import load_subjects
+import re
+import shutil
+from datetime import datetime
+from pathlib import Path
 
+from subjects import load_subjects
 
 source_folder = Path(r"G:\Mój dysk")
 target_root = Path(r"G:\Mój dysk\STUDIA\2026-2027\Semestr 1")
+
 
 def parse_date(date_text):
     try:
@@ -15,12 +16,14 @@ def parse_date(date_text):
     except ValueError:
         return None
 
+
 def get_class_type(class_code):
     if class_code.startswith("W"):
         return "Wyklady"
-    elif class_code.startswith("C"):
+    if class_code.startswith("C"):
         return "Cwiczenia"
     return None
+
 
 def build_target_folder(root, class_type, subject_folder, date_folder, group):
     folder = root / class_type / subject_folder
@@ -28,7 +31,8 @@ def build_target_folder(root, class_type, subject_folder, date_folder, group):
         folder = folder / group.replace("G", "grupa_")
     return folder / date_folder
 
-def move_file(source, target, log_callback = print):
+
+def move_file(source, target, log_callback=print):
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(source, target)
@@ -38,10 +42,15 @@ def move_file(source, target, log_callback = print):
     return True
 
 
-def organize_files(source_folder, target_root,
-                   apply_changes, subject_folders,
-                   log_callback = None, progress_callback = None,
-                   unknown_subject_callback = None):
+def organize_files(
+    source_folder,
+    target_root,
+    apply_changes,
+    subject_folders,
+    log_callback=None,
+    progress_callback=None,
+    unknown_subject_callback=None,
+):
     def log(message):
         if log_callback is None:
             print(message)
@@ -55,11 +64,11 @@ def organize_files(source_folder, target_root,
     planned_count = 0
     error_count = 0
 
-    files_to_prcess = [
+    files_to_process = [
         file for file in source_folder.iterdir() if file.is_file()
     ]
-    total_files = len(files_to_prcess)
-    for index, source_file in enumerate(files_to_prcess, start=1):
+    total_files = len(files_to_process)
+    for index, source_file in enumerate(files_to_process, start=1):
         if progress_callback:
             progress = (index - 1) / total_files * 100
             progress_callback(progress)
@@ -164,6 +173,8 @@ def organize_files(source_folder, target_root,
     log(f"Przeniesiono {moved_count} plikow")
     log(f"Pominieto {skipped_count} plikow")
     log(f"{error_count} Bledow")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Organizer materialow ze studiow"

@@ -46,3 +46,10 @@ class TestSubjects(unittest.TestCase):
 
                 subjects = load_subjects()
             self.assertNotIn("matematyka", subjects)
+
+    def test_reject_invalid_subject_code(self):
+        with self.assertRaises(ValueError):
+            add_subject("invalid code!", "Valid Name")
+
+        with self.assertRaises(ValueError):
+            add_subject("valid_code", "")
