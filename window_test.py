@@ -1,16 +1,33 @@
+from email import header
 from operator import index
+from uuid import uuid4
 import sys
-import ctypes
-from PySide6.QtWidgets import QApplication, QWidget, QFrame, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QComboBox, QLineEdit, QFileDialog, QMessageBox, QScrollArea
-from PySide6.QtCore import QRectF, QPointF, Qt, QEvent
-from PySide6.QtGui import QColor, QPainter, QPixmap, QRadialGradient, QCursor, QPen, QFont, QFontDatabase
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QFrame, QHBoxLayout,
+    QVBoxLayout, QLabel, QPushButton, QComboBox,
+    QLineEdit, QFileDialog, QMessageBox, QScrollArea,
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
+)
+from PySide6.QtCore import (
+    QRectF, QPointF, Qt, QEvent,
+    QSettings, QThread, Signal
+)
+from PySide6.QtGui import (
+    QColor, QPainter, QPixmap, QRadialGradient, QCursor,
+    QPen, QFont, QFontDatabase
+)
 from pathlib import Path
 from ctypes import wintypes
-from ui_theme import (BACKGROUND, SURFACE, BORDER, TEXT_PRIMARY, TEXT_MUTED, TEXT_SECONDARY)
-from semesters import load_semesters, set_active_semester, add_semester, delete_semester, save_semesters, set_semester_subjects
-from uuid import uuid4
+from ui_theme import (
+    BACKGROUND, SURFACE, RAISED, BORDER,
+    TEXT_PRIMARY, TEXT_MUTED, TEXT_SECONDARY
+)
+from semesters import (
+    load_semesters, set_active_semester, add_semester,
+    delete_semester, save_semesters, set_semester_subjects
+)
 from subjects import load_subjects, add_subject, delete_subject
-
+from organizer_materials import organize_files
 
 def load_font(filename):
     font_path = (
@@ -148,9 +165,98 @@ class SemesterComboBox(QComboBox):
 
         painter.end()
 
+class SegmentedProgressBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.progress = 0
+        self.segments = 32
+        self.setFixedHeight(12)
+
+    def set_progress(self, value):
+        self.progress = max(0, min(100, int(value)))
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(
+            QPainter.RenderHint.Antialiasing
+        )
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        gap = 3
+        height = 5
+        width = (
+            self.width() - gap * (self.segments - 1)
+        ) / self.segments
+
+        active = round(
+            self.progress / 100 * self.segments
+        )
+
+        for index in range(self.segments):
+            color = (
+                QColor("#FF304B")
+                if index < active
+                else QColor("#252A33")
+            )
+
+            painter.setBrush(color)
+
+            painter.drawRoundedRect(
+                QRectF(
+                    index * (width + gap),
+                    (self.height() - height) / 2,
+                    width,
+                    height
+                ),
+                2, 2
+            )
+
+class PreviewWorker(QThread):
+    preview_ready = Signal(list, dict)
+    preview_failed = Signal(str)
+    progress_changed = Signal(int)
+
+    def __init__(self, source, target, subject_folders):
+        super().__init__()
+        self.source = Path(source)
+        self.target = Path(target)
+        self.subject_folders = subject_folders
+
+    def run(self):
+        try:
+            operations = []
+
+            result = organize_files(
+                source_folder=self.source,
+                target_root=self.target,
+                apply_changes=False,
+                subject_folders=self.subject_folders,
+                log_callback=lambda message: None,
+                plan_callback=operations.append,
+                progress_callback=lambda value: (
+                    self.progress_changed.emit(round(value))
+                ),
+            )
+
+            if result is None:
+                raise ValueError(
+                    "Nie udało się przeanalizować folderu."
+                )
+
+            self.preview_ready.emit(operations, result)
+
+        except Exception as error:
+            self.preview_failed.emit(str(error))
+
+
 class TestWindow(QWidget):
     def __init__(self):
         super().__init__()
+        self.settings = QSettings(
+            "PUNQTA",
+            "Materials Organizer"
+        )
 
         self.setWindowTitle("Materials Organizer")
         self.setWindowFlags(
@@ -633,11 +739,330 @@ class TestWindow(QWidget):
         workspace.setObjectName("workspace")
 
         workspace_layout = QVBoxLayout(workspace)
-        workspace_layout.setContentsMargins(20, 20, 20, 20)
-        workspace_label = QLabel("OBSZAR ROBOCZY")
-        workspace_label.setStyleSheet(heading_style)
-        workspace_layout.addWidget(workspace_label)
-        workspace_layout.addStretch()
+        workspace_layout.setContentsMargins(0, 0, 0, 0)
+        workspace_layout.setSpacing(0)
+        folders_section = QWidget()
+        folders_layout = QVBoxLayout(folders_section)
+        folders_layout.setContentsMargins(20, 22, 20, 24)
+        folders_layout.setSpacing(10)
+        source_label = QLabel("FOLDER ŹRÓDŁOWY")
+        source_label.setStyleSheet(heading_style)
+
+        self.source_input = QLineEdit()
+        self.source_input.setReadOnly(True)
+        saved_source = self.settings.value(
+            "last_source_folder",
+            "",
+            type=str
+        )
+        self.source_input.setText(saved_source)
+        self.source_input.setPlaceholderText(
+            "Wybierz folder z materiałami..."
+        )
+        self.source_input.setFixedHeight(38)
+
+        browse_button = QPushButton("PRZEGLĄDAJ")
+        browse_button.setFixedSize(115, 38)
+        browse_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+        browse_button.clicked.connect(
+            self.browse_source_folder
+        )
+
+        browse_button.setStyleSheet("""
+            QPushButton {
+                background-color: #171B22;
+                color: #F5F7FA;
+                border: 1px solid #343A44;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #232831;
+            }
+            QPushButton:pressed {
+                background-color: #343A44;
+            }
+        """)
+
+        source_row = QHBoxLayout()
+        source_row.setSpacing(10)
+        source_row.addWidget(self.source_input, 1)
+        source_row.addWidget(browse_button)
+        target_label = QLabel(
+            "FOLDER DOCELOWY · AKTYWNY SEMESTR"
+        )
+        target_label.setStyleSheet(heading_style)
+        self.target_input = QLineEdit()
+        self.target_input.setReadOnly(True)
+        self.target_input.setPlaceholderText(
+            "Brak folderu docelowego"
+        )
+        self.target_input.setFixedHeight(38)
+        folder_input_style = f"""
+            QLineEdit {{
+                background-color: {BACKGROUND};
+                color: {TEXT_PRIMARY};
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+                padding: 0 12px;
+                font-size: 13px;
+            }}
+        """
+
+        self.source_input.setStyleSheet(folder_input_style)
+        self.target_input.setStyleSheet(folder_input_style)
+        folders_layout.addWidget(source_label)
+        folders_layout.addLayout(source_row)
+        folders_layout.addSpacing(12)
+        folders_layout.addWidget(target_label)
+        folders_layout.addWidget(self.target_input)
+        workspace_layout.addWidget(folders_section)
+        folder_divider = QFrame()
+        folder_divider.setFixedHeight(1)
+        folder_divider.setStyleSheet("""
+            background-color: #343A44;
+            border: none;
+        """)
+
+        workspace_layout.addWidget(folder_divider)
+        preview_section = QWidget()
+        preview_layout = QVBoxLayout(preview_section)
+        preview_layout.setContentsMargins(20, 18, 20, 20)
+        preview_layout.setSpacing(10)
+        preview_header = QHBoxLayout()
+        preview_header.setSpacing(12)
+        self.preview_summary = QLabel("0 PRZENIESIEŃ")
+        self.preview_summary.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px;"
+        )
+
+        self.preview_button = QPushButton("PODGLĄD")
+        self.preview_button.setFixedSize(105, 36)
+        self.preview_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.preview_button.setStyleSheet("""
+            QPushButton {
+                background: #171B22;
+                color: #F5F7FA;
+                border: 1px solid #343A44;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background: #232831;
+            }
+            QPushButton:disabled {
+                color: #7B828C;
+                background: #11141B;
+            }
+        """)
+
+        self.preview_button.clicked.connect(
+            self.generate_preview
+        )
+        self.apply_button = QPushButton("ZASTOSUJ PRZENIESIENIE")
+        self.apply_button.setFixedSize(195, 36)
+        self.apply_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+        self.apply_button.setEnabled(False)
+        self.apply_button.setToolTip(
+            "Przenoszenie włączymy po ukończeniu zabezpieczeń."
+        )
+
+        self.apply_button.setStyleSheet("""
+            QPushButton {
+                background-color: #9F2034;
+                color: #F5F7FA;
+                border: 1px solid #AF2940;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+
+            QPushButton:hover {
+                background-color: #B52740;
+            }
+
+            QPushButton:disabled {
+                background-color: #461A24;
+                color: #A87B84;
+                border: 1px solid #59212D;
+            }
+        """)
+
+        preview_header.setSpacing(8)
+        preview_header.addWidget(self.preview_button)
+        preview_header.addWidget(self.apply_button)
+        preview_header.addStretch()
+        summary_row = QHBoxLayout()
+        summary_row.addStretch()
+        summary_row.addWidget(self.preview_summary)
+        self.preview_empty = QLabel(
+            "Brak podglądu operacji.\n"
+            "Kliknij PODGLĄD, aby przeanalizować pliki."
+        )
+        self.preview_empty.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+        self.preview_empty.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 12px;"
+        )
+
+        self.preview_table = QTableWidget(0, 3)
+        self.preview_table.setHorizontalHeaderLabels([
+            "PLIK",
+            "PRZEDMIOT",
+            "DOCELOWO",
+        ])
+
+        self.preview_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self.preview_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection
+        )
+
+        self.preview_table.setFocusPolicy(
+            Qt.FocusPolicy.NoFocus
+        )
+
+        self.preview_table.setTextElideMode(
+            Qt.TextElideMode.ElideMiddle
+        )
+
+        self.preview_table.verticalHeader().setDefaultSectionSize(35)
+        self.preview_table.verticalHeader().hide()
+        self.preview_table.setShowGrid(False)
+
+        header = self.preview_table.horizontalHeader()
+        header.setHighlightSections(False)
+        header.setSectionsClickable(False)
+        header.setFixedHeight(34)
+        header.setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        header.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        header.setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
+
+        
+        self.preview_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #080A0E;
+                color: #E2E5EA;
+                border: 1px solid #252A33;
+                border-radius: 8px;
+                font-size: 12px;
+                gridline-color: transparent;
+            }
+
+            QHeaderView::section {
+                background-color: #101319;
+                color: #9099A7;
+                border: none;
+                border-bottom: 1px solid #252A33;
+                padding: 8px;
+                font-size: 10px;
+                font-weight: 400;
+            }
+
+            QTableWidget::item {
+                padding: 0 8px;
+                border: none;
+                border-bottom: 1px solid #171B22;
+            }
+
+            QScrollBar:vertical {
+                background: transparent;
+                width: 3px;
+                margin: 0;
+            }
+
+            QScrollBar::handle:vertical {
+                background: rgba(75, 83, 96, 100);
+                border-radius: 1px;
+                min-height: 30px;
+            }
+
+            QScrollBar::handle:vertical:hover {
+                background: rgba(100, 110, 125, 120);
+            }
+
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """)
+
+        self.preview_table.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+
+        self.preview_table.hide()
+
+        progress_panel = QFrame()
+        progress_panel.setObjectName("progressPanel")
+        progress_panel.setStyleSheet("""
+            QFrame#progressPanel {
+                background-color: #0B0D12;
+                border: 1px solid #252A33;
+                border-radius: 9px;
+            }
+        """)
+
+        progress_layout = QVBoxLayout(progress_panel)
+        progress_layout.setContentsMargins(16, 14, 16, 14)
+        progress_layout.setSpacing(8)
+        progress_heading = QLabel("POSTĘP")
+        progress_heading.setStyleSheet(heading_style)
+        progress_row = QHBoxLayout()
+
+        self.progress_percent = QLabel("0%")
+        self.progress_percent.setStyleSheet(f"""
+            color: {TEXT_PRIMARY};
+            font-family: "{MANROPE}";
+            font-size: 24px;
+            font-weight: 500;
+        """)
+
+        self.progress_status = QLabel("GOTOWY")
+        self.progress_status.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px;"
+        )
+
+        progress_row.addWidget(self.progress_percent)
+        progress_row.addStretch()
+        progress_row.addWidget(self.progress_status)
+        self.progress_bar = SegmentedProgressBar()
+        progress_layout.addWidget(progress_heading)
+        progress_layout.addLayout(progress_row)
+        progress_layout.addWidget(self.progress_bar)
+        preview_layout.addWidget(progress_panel)
+        preview_layout.addSpacing(10)
+        preview_layout.addLayout(preview_header)
+        preview_layout.addLayout(summary_row)
+        preview_layout.addWidget(self.preview_empty, 1)
+        preview_layout.addWidget(self.preview_table, 1)
+        workspace_layout.addWidget(
+            preview_section, stretch=1
+        )
+
+        self.refresh_target_folder()
         content_layout.addWidget(sidebar)
         content_layout.addWidget(workspace, stretch=1)
         layout.addWidget(content, stretch=1)
@@ -646,7 +1071,7 @@ class TestWindow(QWidget):
             lambda event: self.toggle_maximize()
         )
         self.refresh_subjects()
-    
+
     def nativeEvent(self, eventType, message):
         if (
             sys.platform != "win32"
@@ -874,6 +1299,37 @@ class TestWindow(QWidget):
         if semester_id is not None:
             set_active_semester(semester_id)
             self.refresh_subjects()
+            self.refresh_target_folder()
+
+    def browse_source_folder(self):
+        current_folder = self.source_input.text()
+
+        if not Path(current_folder).is_dir():
+            current_folder = str(Path.home())
+
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Wybierz folder źródłowy",
+            current_folder
+        )
+
+        if folder:
+            self.source_input.setText(folder)
+
+            self.settings.setValue(
+                "last_source_folder",
+                folder
+            )
+            self.settings.sync()
+
+    def refresh_target_folder(self):
+        semester_id = self.semester_combo.currentData()
+        data = load_semesters()
+
+        semester = data["semesters"].get(semester_id, {})
+        target = semester.get("target", "")
+
+        self.target_input.setText(str(target))
 
     def refresh_subjects(self):
         while self.subjects_list_layout.count():
@@ -1119,6 +1575,164 @@ class TestWindow(QWidget):
             return
 
         self.refresh_subjects()
+    
+    def update_preview_progress(self, value):
+        self.progress_bar.set_progress(value)
+        self.progress_percent.setText(f"{value}%")
+
+    def generate_preview(self):
+        source = self.source_input.text().strip()
+        target = self.target_input.text().strip()
+        semester_id = self.semester_combo.currentData()
+        self.update_preview_progress(0)
+        self.progress_status.setText("ANALIZA...")
+
+        if not source or not Path(source).is_dir():
+            QMessageBox.warning(
+                self,
+                "Brak folderu",
+                "Wybierz poprawny folder źródłowy."
+            )
+            return
+
+        if not target or not semester_id:
+            QMessageBox.warning(
+                self,
+                "Brak semestru",
+                "Wybierz semestr z folderem docelowym."
+            )
+            return
+
+        try:
+            semester = load_semesters()["semesters"][semester_id]
+            known_subjects = load_subjects()
+
+            subject_folders = {
+                code: known_subjects[code]
+                for code in semester.get("subjects", [])
+                if code in known_subjects
+            }
+
+        except (KeyError, ValueError, OSError) as error:
+            QMessageBox.critical(
+                self, "Błąd konfiguracji", str(error)
+            )
+            return
+        self._preview_context = (
+            source,
+            target,
+            semester_id
+        )
+
+        self._preview_subjects = subject_folders.copy()
+
+        self.update_preview_progress(0)
+        self.progress_status.setText("ANALIZA...")
+
+        self.preview_button.setEnabled(False)
+        self.preview_summary.setText("ANALIZA...")
+        self.preview_table.hide()
+        self.preview_empty.setText("Trwa analiza plików...")
+        self.preview_empty.show()
+        self.preview_worker = PreviewWorker(
+            source, target, subject_folders
+        )
+
+        self.preview_worker.progress_changed.connect(
+            self.update_preview_progress
+        )
+
+        self.preview_worker.preview_ready.connect(
+            self.show_preview_results
+        )
+
+        self.preview_worker.preview_failed.connect(
+            self.show_preview_error
+        )
+
+        self.preview_worker.finished.connect(
+            self.preview_finished
+        )
+
+        self.preview_worker.start()
+
+    def show_preview_results(self, operations, result):
+        current_context = (
+            self.source_input.text().strip(),
+            self.target_input.text().strip(),
+            self.semester_combo.currentData()
+        )
+        self.progress_status.setText("GOTOWY")
+
+        if current_context != self._preview_context:
+            self.preview_summary.setText("NIEAKTUALNY PLAN")
+            self.preview_empty.setText(
+                "Zmieniono folder lub semestr.\n"
+                "Uruchom podgląd ponownie."
+            )
+            return
+
+        self.preview_table.setRowCount(len(operations))
+        self.preview_table.setWordWrap(False)
+
+        for row, operation in enumerate(operations):
+            code = operation["subject"]
+            subject_name = self._preview_subjects.get(
+                code, code
+            )
+
+            target_path = Path(operation["target"])
+
+            try:
+                target_display = str(
+                    target_path.parent.relative_to(
+                        Path(self._preview_context[1])
+                    )
+                )
+            except ValueError:
+                target_display = str(target_path)
+
+            values = [
+                operation["filename"],
+                subject_name,
+                target_display,
+            ]
+
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                item.setToolTip(value)
+                self.preview_table.setItem(
+                    row, column, item
+                )
+
+        self.preview_summary.setText(
+            f"{result['planned']} PRZENIESIEŃ · "
+            f"{result['skipped']} POMINIĘTE"
+        )
+
+        if operations:
+            self.preview_empty.hide()
+            self.preview_table.show()
+        else:
+            self.preview_table.hide()
+            self.preview_empty.setText(
+                "Brak operacji do przeniesienia.\n"
+                "Sprawdź nazwy plików i przypisane przedmioty."
+            )
+            self.preview_empty.show()
+
+    def show_preview_error(self, message):
+        self.progress_status.setText("BŁĄD")
+        self.preview_summary.setText("BŁĄD")
+        self.preview_table.hide()
+        self.preview_empty.setText(
+            f"Analiza nie powiodła się:\n{message}"
+        )
+        self.preview_empty.show()
+
+    def preview_finished(self):
+        self.preview_button.setEnabled(True)
+
 
     def start_drag(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

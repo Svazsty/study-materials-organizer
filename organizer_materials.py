@@ -50,6 +50,7 @@ def organize_files(
     log_callback=None,
     progress_callback=None,
     unknown_subject_callback=None,
+    plan_callback=None
 ):
     def log(message):
         if log_callback is None:
@@ -161,6 +162,15 @@ def organize_files(
             log(f"Przeniesiono: {target_file}")
         else:
             planned_count += 1
+            if plan_callback is not None:
+                plan_callback({
+                    "filename": file_name,
+                    "subject": subject,
+                    "class_type": class_type,
+                    "source": str(source_file),
+                    "target": str(target_file),
+                    "status": "PLANNED",
+                })
             log(f"Planowane przeniesienie: {source_file} -> {target_file}")
 
     if progress_callback is not None:
@@ -173,6 +183,13 @@ def organize_files(
     log(f"Przeniesiono {moved_count} plikow")
     log(f"Pominieto {skipped_count} plikow")
     log(f"{error_count} Bledow")
+    return {
+        "checked": checked_count,
+        "planned": planned_count,
+        "moved": moved_count,
+        "skipped": skipped_count,
+        "errors": error_count,
+    }
 
 
 if __name__ == "__main__":
