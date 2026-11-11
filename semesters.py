@@ -47,6 +47,14 @@ def save_semesters(data):
         encoding="utf-8"
     )
 
+def set_active_semester(semester_id):
+    data = load_semesters()
+
+    if semester_id not in data["semesters"]:
+        raise ValueError("Wybrany semestr nie istnieje")
+
+    data["active_semester"] = semester_id
+    save_semesters(data)
 
 def add_semester(semester_id, name, target, subjects):
     data = load_semesters()
