@@ -1,0 +1,150 @@
+name: Build Fedora RPM
+
+on:
+  push:
+    branches:
+      - feature/dark-ui
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:43
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Fedora build dependencies
+        run: |
+          dnf install -y \
+            curl tar gzip rpm-build \
+            gcc binutils patchelf \
+            libX11 libxcb libxkbcommon \
+            libxkbcommon-x11 xcb-util-cursor \
+            mesa-libGL fontconfig
+      
+        - name: Install Fedora build dependencies
+          run: |
+            dnf install -y \
+              curl tar gzip rpm-build \
+              gcc binutils patchelf \
+              libX11 libxcb libxkbcommon \
+              libxkbcommon-x11 xcb-util-cursor \
+              mesa-libGL libglvnd-egl fontconfig
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python and dependencies
+        run: |
+          uv python install 3.13
+          uv sync --python 3.13 --frozen
+
+      - name: Run tests
+        run: uv run python -m unittest discover -s tests -v
+
+      - name: Build Linux application
+        run: |
+          uv run pyinstaller \
+            --noconfirm \
+            --clean \
+            --onedir \
+            --name MaterialsOrganizer \
+            --add-data "assets:assets" \
+            --add-data "subjects.json:." \
+            app.py
+
+          test -x dist/MaterialsOrganizer/MaterialsOrganizer
+
+      - name: Create RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          mkdir -p stage/materials-organizer-0.1.0
+
+          cp -a dist/MaterialsOrganizer stage/materials-organizer-0.1.0/
+          cp LICENSE stage/materials-organizer-0.1.0/
+          cp assets/Mo_logo.png stage/materials-organizer-0.1.0/
+
+          cat > stage/materials-organizer-0.1.0/materials-organizer.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Materials Organizer
+          Comment=Organize university study materials
+          Exec=materials-organizer
+          Icon=materials-organizer
+          Terminal=false
+          Categories=Utility;Education;
+          EOF
+
+          tar -czf rpmbuild/SOURCES/materials-organizer-0.1.0.tar.gz \
+            -C stage materials-organizer-0.1.0
+
+          cat > rpmbuild/SPECS/materials-organizer.spec <<'EOF'
+          Name: materials-organizer
+          Version: 0.1.0
+          Release: 1%{?dist}
+          Summary: Desktop organizer for study materials
+          License: MIT
+          BuildArch: x86_64
+          Source0: %{name}-%{version}.tar.gz
+          AutoReqProv: no
+
+          Requires: glibc, libX11, libxcb, libxkbcommon
+          Requires: libxkbcommon-x11, xcb-util-cursor
+          Requires: xcb-util-image, xcb-util-keysyms
+          Requires: xcb-util-renderutil, xcb-util-wm
+          Requires: fontconfig, libglvnd-glx, libglvnd-egl
+
+          %description
+          A desktop application for organizing university study materials.
+
+          %prep
+          %setup -q
+
+          %build
+
+          %install
+          mkdir -p %{buildroot}/opt/materials-organizer
+          cp -a MaterialsOrganizer/. %{buildroot}/opt/materials-organizer/
+
+          mkdir -p %{buildroot}%{_bindir}
+          printf '#!/bin/sh\nexec /opt/materials-organizer/MaterialsOrganizer "$@"\n' > %{buildroot}%{_bindir}/materials-organizer
+          chmod 755 %{buildroot}%{_bindir}/materials-organizer
+
+          mkdir -p %{buildroot}%{_datadir}/applications
+          install -m 644 materials-organizer.desktop %{buildroot}%{_datadir}/applications/materials-organizer.desktop
+
+          mkdir -p %{buildroot}%{_datadir}/pixmaps
+          install -m 644 Mo_logo.png %{buildroot}%{_datadir}/pixmaps/materials-organizer.png
+
+          %files
+          %license LICENSE
+          /opt/materials-organizer
+          %{_bindir}/materials-organizer
+          %{_datadir}/applications/materials-organizer.desktop
+          %{_datadir}/pixmaps/materials-organizer.png
+          EOF
+
+          rpmbuild \
+            --define "_topdir $PWD/rpmbuild" \
+            -bb rpmbuild/SPECS/materials-organizer.spec
+
+          mkdir -p release
+          cp rpmbuild/RPMS/x86_64/*.rpm release/
+
+      - name: Upload RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: MaterialsOrganizer-Fedora-x64
+          path: release/*.rpm
+          if-no-files-found: error

@@ -1,14 +1,7 @@
-import argparse
-import re
-import shutil
+import re, shutil, argparse, os
 from datetime import datetime
 from pathlib import Path
-
 from subjects import load_subjects
-
-source_folder = Path(r"G:\Mój dysk")
-target_root = Path(r"G:\Mój dysk\STUDIA\2026-2027\Semestr 1")
-
 
 def parse_date(date_text):
     try:
@@ -41,6 +34,104 @@ def move_file(source, target, log_callback=print):
         return False
     return True
 
+def validate_planned_operation(operation):
+    source = Path(operation["source"])
+    target = Path(operation["target"])
+
+    if source.is_symlink():
+        return False, "Plik źródłowy jest dowiązaniem symbolicznym"
+
+    if not source.is_file():
+        return False, "Plik źródłowy nie istnieje"
+
+    try:
+        current_stat = source.stat()
+    except OSError as error:
+        return False, f"Nie można odczytać pliku: {error}"
+
+    if current_stat.st_size != operation["size"]:
+        return False, "Rozmiar pliku uległ zmianie"
+
+    if current_stat.st_mtime_ns != operation["mtime_ns"]:
+        return False, "Plik został zmodyfikowany"
+
+    if source.resolve() == target.resolve():
+        return False, "Źródło i cel są identyczne"
+
+    if target.exists() or target.is_symlink():
+        return False, "Plik docelowy już istnieje"
+
+    return True, "OK"
+
+def execute_planned_operation(operation, source_root, target_root):
+    source = Path(operation["source"])
+    target = Path(operation["target"])
+
+    source_root = Path(source_root).resolve()
+    target_root = Path(target_root).resolve()
+
+    if source.parent.resolve() != source_root:
+        return False, "Plik znajduje się poza folderem źródłowym"
+
+    if not target.resolve().is_relative_to(target_root):
+        return False, "Cel znajduje się poza folderem docelowym"
+
+    valid, reason = validate_planned_operation(operation)
+
+    if not valid:
+        return False, reason
+
+    created = False
+    copy_complete = False
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        if not target.parent.resolve().is_relative_to(target_root):
+            return False, "Niebezpieczna ścieżka docelowa"
+
+        with source.open("rb") as source_file:
+            with target.open("xb") as target_file:
+                created = True
+                shutil.copyfileobj(source_file, target_file)
+
+                target_file.flush()
+                os.fsync(target_file.fileno())
+
+        current = source.stat()
+
+        if (
+            current.st_size != operation["size"]
+            or current.st_mtime_ns != operation["mtime_ns"]
+            or target.stat().st_size != operation["size"]
+        ):
+            raise ValueError("Plik zmienił się podczas kopiowania")
+
+        shutil.copystat(source, target)
+
+        copy_complete = True
+
+        source.unlink()
+
+        return True, "Przeniesiono"
+
+    except (OSError, ValueError) as error:
+        if created and not copy_complete:
+            try:
+                target.unlink()
+            except OSError:
+                return False, (
+                    f"{error}; nie udało się usunąć "
+                    "niekompletnej kopii docelowej"
+                )
+
+        if copy_complete:
+            return False, (
+                "Kopia docelowa została utworzona, "
+                f"ale źródło nie zostało usunięte: {error}"
+            )
+
+        return False, str(error)
 
 def organize_files(
     source_folder,
@@ -50,7 +141,13 @@ def organize_files(
     log_callback=None,
     progress_callback=None,
     unknown_subject_callback=None,
+    plan_callback=None
 ):
+    if apply_changes:
+        raise RuntimeError(
+            "Bezpośrednie przenoszenie jest wyłączone. "
+            "Użyj zatwierdzonego planu operacji."
+        )
     def log(message):
         if log_callback is None:
             print(message)
@@ -161,6 +258,23 @@ def organize_files(
             log(f"Przeniesiono: {target_file}")
         else:
             planned_count += 1
+            if plan_callback is not None:
+                try:
+                    file_stat = source_file.stat()
+                except OSError as error:
+                    log(f"Nie można odczytać pliku {file_name}: {error}")
+                    planned_count -= 1
+                    continue
+                plan_callback({
+                    "filename": file_name,
+                    "subject": subject,
+                    "class_type": class_type,
+                    "source": str(source_file),
+                    "target": str(target_file),
+                    "status": "PLANNED",
+                    "size": file_stat.st_size,
+                    "mtime_ns": file_stat.st_mtime_ns,
+                })
             log(f"Planowane przeniesienie: {source_file} -> {target_file}")
 
     if progress_callback is not None:
@@ -173,6 +287,13 @@ def organize_files(
     log(f"Przeniesiono {moved_count} plikow")
     log(f"Pominieto {skipped_count} plikow")
     log(f"{error_count} Bledow")
+    return {
+        "checked": checked_count,
+        "planned": planned_count,
+        "moved": moved_count,
+        "skipped": skipped_count,
+        "errors": error_count,
+    }
 
 
 if __name__ == "__main__":
@@ -187,16 +308,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--source",
         type=Path,
-        default=source_folder,
+        required=True,
         help="Folder z plikami do uporzadkowania"
     )
+
     parser.add_argument(
         "--target",
         type=Path,
-        default=target_root,
+        required=True,
         help="Folder docelowy semestru"
     )
+
     args = parser.parse_args()
+
+    if args.apply:
+        parser.error(
+            "Tryb --apply jest tymczasowo wyłączony. "
+            "Użyj aplikacji Materials Organizer."
+        )
+
     organize_files(
-        args.source, args.target, args.apply, load_subjects()
+        args.source,
+        args.target,
+        False,
+        load_subjects()
     )

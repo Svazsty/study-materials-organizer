@@ -44,59 +44,30 @@ class TestOrganizeFiles(unittest.TestCase):
             self.assertEqual(source_file.read_text(encoding="utf-8"), "test")
             self.assertFalse(target.exists())
 
-    def test_apply_moves_file(self):
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source = root / "source"
-            target = root / "target"
+    def test_legacy_apply_is_blocked(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temp:
+            source = Path(temp) / "source"
+            target = Path(temp) / "target"
+
             source.mkdir()
+            target.mkdir()
 
-            source_file = source / "28.10.2026_W01_algebra.md"
-            source_file.write_text("test", encoding="utf-8")
+            test_file = source / "12.11.2026_W01_algebra_Test.txt"
+            test_file.write_text("Test", encoding="utf-8")
 
-            output = StringIO()
-
-            with redirect_stdout(output):
+            with self.assertRaises(RuntimeError):
                 organize_files(
-                    source, target, True, {"algebra": "Algebra liniowa"}
+                    source,
+                    target,
+                    True,
+                    {"algebra": "Algebra liniowa"}
                 )
 
-            expected_folder = (
-                    target / "Wyklady" / "Algebra liniowa" / "28.10.2026_W01"
-            )
-            expected_file = expected_folder / source_file.name
-
-            self.assertFalse(source_file.exists())
-            self.assertEqual(expected_file.read_text(encoding="utf-8"), "test")
-
-    def test_existing_target_is_not_overwritten(self):
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source = root / "source"
-            target = root / "target"
-            source.mkdir()
-
-            file_name = "28.10.2026_W01_algebra.md"
-            source_file = source / file_name
-            source_file.write_text("nowe dane", encoding="utf-8")
-
-            target_folder = (
-                target / "Wyklady" / "Algebra liniowa" / "28.10.2026_W01"
-            )
-            target_folder.mkdir(parents=True)
-
-            target_file = target_folder / file_name
-            target_file.write_text("stare dane", encoding="utf-8")
-
-            output = StringIO()
-
-            with redirect_stdout(output):
-                organize_files(
-                    source, target, True, {"algebra": "Algebra liniowa"}
-                )
-
-            self.assertEqual(target_file.read_text(encoding="utf-8"), "stare dane")
-            self.assertEqual(source_file.read_text(encoding="utf-8"), "nowe dane")
+            self.assertTrue(test_file.exists())
+            self.assertEqual(list(target.iterdir()), [])
 
     def test_progress_callback(self):
         with TemporaryDirectory() as temporary:

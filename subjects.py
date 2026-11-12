@@ -2,10 +2,36 @@ import json
 import re
 from pathlib import Path
 
-SUBJECTS_FILE = Path(__file__).with_name("subjects.json")
 
+DEFAULT_SUBJECTS_FILE = Path(__file__).with_name("subjects.json")
+
+SUBJECTS_FILE = (
+    Path.home() / ".study-materials-organizer" / "subjects.json"
+)
+
+
+def ensure_subjects_file():
+    if SUBJECTS_FILE.exists():
+        return
+
+    SUBJECTS_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    if not DEFAULT_SUBJECTS_FILE.is_file():
+        raise FileNotFoundError(
+            "Brakuje domyślnego pliku subjects.json"
+        )
+
+    try:
+        with SUBJECTS_FILE.open("xb") as file:
+            file.write(DEFAULT_SUBJECTS_FILE.read_bytes())
+    except FileExistsError:
+        pass
 
 def load_subjects():
+    ensure_subjects_file()
     with SUBJECTS_FILE.open("r", encoding="utf-8") as file:
         subjects = json.load(file)
 

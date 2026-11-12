@@ -15,3 +15,5 @@ Test_wejscie/
 Test_wyjscie/
 Test_przenoszenia/
 Test_uporzadkowane/
+build/
+dist/
