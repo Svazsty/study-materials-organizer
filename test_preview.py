@@ -1,7 +1,10 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from organizer_materials import organize_files
+from organizer_materials import (
+    organize_files,
+    validate_planned_operation,
+)
 
 with TemporaryDirectory() as temporary:
     root = Path(temporary)
@@ -29,7 +32,23 @@ with TemporaryDirectory() as temporary:
     assert test_file.exists()
     assert not target.exists()
 
-    print("TEST OK")
-    print(planned_operations[0])
-    print(result)
+    print("TEST PODGLĄDU: OK")
 
+    operation = planned_operations[0]
+
+    valid, reason = validate_planned_operation(operation)
+
+    assert valid, reason
+    print("Walidacja poprawnego pliku: OK")
+
+    test_file.write_text(
+        "Zmieniona zawartość",
+        encoding="utf-8"
+    )
+
+    valid, reason = validate_planned_operation(operation)
+
+    assert not valid
+    print(f"Wykryto zmianę pliku: {reason}")
+
+    print("WSZYSTKIE TESTY OK")

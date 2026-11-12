@@ -27,7 +27,7 @@ from semesters import (
     delete_semester, save_semesters, set_semester_subjects
 )
 from subjects import load_subjects, add_subject, delete_subject
-from organizer_materials import organize_files
+from organizer_materials import organize_files, execute_planned_operation, validate_planned_operation
 
 def load_font(filename):
     font_path = (
@@ -47,7 +47,8 @@ def load_font(filename):
 class DotButton(QPushButton):
     def __init__(self, color, name, action):
         super().__init__()
-
+        self._move_in_progress = False
+        self.move_worker = None
         self.dot_color = QColor(color)
         self.hovered = False
         self.setFixedSize(23, 30)
@@ -249,10 +250,83 @@ class PreviewWorker(QThread):
         except Exception as error:
             self.preview_failed.emit(str(error))
 
+class MoveWorker(QThread):
+    progress_changed = Signal(int)
+    move_completed = Signal(list, dict)
+    move_failed = Signal(str)
+
+    def __init__(self, operations, source_root, target_root):
+        super().__init__()
+
+        self.operations = [
+            operation.copy() for operation in operations
+        ]
+        self.source_root = Path(source_root)
+        self.target_root = Path(target_root)
+
+    def run(self):
+        try:
+            results = []
+            moved = 0
+            failed = 0
+
+            total = len(self.operations)
+
+            if total == 0:
+                raise ValueError(
+                    "Brak operacji do wykonania."
+                )
+
+            self.progress_changed.emit(0)
+
+            for index, operation in enumerate(
+                self.operations, start=1
+            ):
+                try:
+                    success, message = execute_planned_operation(
+                        operation,
+                        self.source_root,
+                        self.target_root,
+                    )
+                except Exception as error:
+                    success = False
+                    message = str(error)
+
+                results.append({
+                    "filename": operation["filename"],
+                    "success": success,
+                    "message": message,
+                })
+
+                if success:
+                    moved += 1
+                else:
+                    failed += 1
+
+                progress = round(index / total * 100)
+                self.progress_changed.emit(progress)
+
+            self.move_completed.emit(
+                results,
+                {
+                    "moved": moved,
+                    "failed": failed,
+                    "total": total,
+                }
+            )
+
+        except Exception as error:
+            self.move_failed.emit(str(error))
 
 class TestWindow(QWidget):
     def __init__(self):
         super().__init__()
+        self._preview_invalidated = True
+        self._preview_context = None
+        self._preview_subjects = {}
+        self._planned_operations = []
+        self._move_in_progress = False
+        self._move_worker = None
         self.settings = QSettings(
             "PUNQTA",
             "Materials Organizer"
@@ -302,7 +376,7 @@ class TestWindow(QWidget):
         bar.setContentsMargins(16, 0, 16, 0)
 
         bar.setSpacing(8)
-        
+
         title = QLabel("Materials Organizer")
         title.setStyleSheet(f"""
             color: #F5F7FA;
@@ -373,9 +447,9 @@ class TestWindow(QWidget):
         ferrum.setStyleSheet(
             "color: #FF183A; font-size: 12px; font-weight: 400;"
         )
-      
+
         bar.addWidget(ferrum)
-        bar.addStretch()       
+        bar.addStretch()
         controls = QWidget()
         dots_layout = QHBoxLayout(controls)
         dots_layout.setContentsMargins(0, 0, 0, 0)
@@ -398,7 +472,7 @@ class TestWindow(QWidget):
         divider.setStyleSheet(
             "background-color: #343A44; border: none;"
         )
-        
+
         layout.addWidget(divider)
 
         content = QWidget()
@@ -407,6 +481,7 @@ class TestWindow(QWidget):
         content_layout.setSpacing(0)
 
         sidebar = QFrame()
+        self.sidebar = sidebar
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(280)
 
@@ -433,7 +508,7 @@ class TestWindow(QWidget):
         semester_label = QLabel("SEMESTR")
         semester_label.setStyleSheet(heading_style)
 
-        
+
         sidebar_layout.addWidget(semester_label)
 
         self.semester_combo = SemesterComboBox()
@@ -742,6 +817,7 @@ class TestWindow(QWidget):
         workspace_layout.setContentsMargins(0, 0, 0, 0)
         workspace_layout.setSpacing(0)
         folders_section = QWidget()
+        self.folders_section = folders_section
         folders_layout = QVBoxLayout(folders_section)
         folders_layout.setContentsMargins(20, 22, 20, 24)
         folders_layout.setSpacing(10)
@@ -896,7 +972,9 @@ class TestWindow(QWidget):
                 border: 1px solid #59212D;
             }
         """)
-
+        self.apply_button.clicked.connect(
+            self.check_move_plan
+        )
         preview_header.setSpacing(8)
         preview_header.addWidget(self.preview_button)
         preview_header.addWidget(self.apply_button)
@@ -955,7 +1033,7 @@ class TestWindow(QWidget):
             2, QHeaderView.ResizeMode.Stretch
         )
 
-        
+
         self.preview_table.setStyleSheet("""
             QTableWidget {
                 background-color: #080A0E;
@@ -1105,32 +1183,32 @@ class TestWindow(QWidget):
         bottom = height - margin <= y < height
 
         if top and left:
-            return True, 13      
+            return True, 13
 
         if top and right:
-            return True, 14     
+            return True, 14
 
         if bottom and left:
-            return True, 16      
+            return True, 16
 
         if bottom and right:
-            return True, 17      
+            return True, 17
 
         if left:
-            return True, 10      
+            return True, 10
 
         if right:
-            return True, 11      
+            return True, 11
 
         if top:
-            return True, 12      
+            return True, 12
 
         if bottom:
-            return True, 15      
+            return True, 15
 
         return super().nativeEvent(eventType, message)
 
-    
+
     def create_semester(self):
         name = self.new_semester_name.text().strip()
 
@@ -1208,6 +1286,8 @@ class TestWindow(QWidget):
 
         self.new_semester_name.clear()
         self.refresh_subjects()
+        self.refresh_target_folder()
+        self.invalidate_preview()
 
     def remove_semester(self):
         semester_id = self.semester_combo.currentData()
@@ -1267,9 +1347,8 @@ class TestWindow(QWidget):
                 str(error)
             )
             return
-        
+
         self.semester_combo.blockSignals(True)
-        self.refresh_subjects()
 
         try:
             self.semester_combo.clear()
@@ -1292,6 +1371,9 @@ class TestWindow(QWidget):
 
         finally:
             self.semester_combo.blockSignals(False)
+        self.refresh_subjects()
+        self.refresh_target_folder()
+        self.invalidate_preview()
 
     def change_semester(self, index):
         semester_id = self.semester_combo.itemData(index)
@@ -1302,25 +1384,42 @@ class TestWindow(QWidget):
             self.refresh_target_folder()
 
     def browse_source_folder(self):
-        current_folder = self.source_input.text()
+        worker = getattr(self, "preview_worker", None)
 
-        if not Path(current_folder).is_dir():
-            current_folder = str(Path.home())
+        if worker is not None and worker.isRunning():
+            QMessageBox.information(
+                self,
+                "Analiza w toku",
+                "Poczekaj na zakończenie analizy."
+            )
+            return
+
+        current_folder = self.source_input.text().strip()
+
+        start_folder = (
+            current_folder
+            if Path(current_folder).is_dir()
+            else str(Path.home())
+        )
 
         folder = QFileDialog.getExistingDirectory(
             self,
             "Wybierz folder źródłowy",
-            current_folder
+            start_folder
         )
 
-        if folder:
-            self.source_input.setText(folder)
+        if not folder or folder == current_folder:
+            return
 
-            self.settings.setValue(
-                "last_source_folder",
-                folder
-            )
-            self.settings.sync()
+        self.source_input.setText(folder)
+
+        self.settings.setValue(
+            "last_source_folder",
+            folder
+        )
+        self.settings.sync()
+        self.invalidate_preview()
+
 
     def refresh_target_folder(self):
         semester_id = self.semester_combo.currentData()
@@ -1575,17 +1674,50 @@ class TestWindow(QWidget):
             return
 
         self.refresh_subjects()
-    
+
+    def closeEvent(self, event):
+        for name in ("preview_worker", "move_worker"):
+            worker = getattr(self, name, None)
+
+            if worker is not None and worker.isRunning():
+                QMessageBox.information(
+                    self,
+                    "Operacja w toku",
+                    "Zamknięcie będzie możliwe po zakończeniu operacji."
+                )
+                event.ignore()
+                return
+
+        super().closeEvent(event)
+
     def update_preview_progress(self, value):
+        if self._preview_invalidated:
+            return
+
         self.progress_bar.set_progress(value)
         self.progress_percent.setText(f"{value}%")
 
+    def invalidate_preview(self):
+        self._planned_operations.clear()
+        self._preview_invalidated = True
+        self.apply_button.setEnabled(False)
+        self.preview_table.setRowCount(0)
+        self.preview_table.hide()
+        self.preview_summary.setText("0 PRZENIESIEŃ")
+        self.preview_empty.setText(
+            "Plan wymaga odświeżenia.\n"
+            "Kliknij PODGLĄD, aby ponownie przeanalizować pliki."
+        )
+        self.preview_empty.show()
+        self.progress_bar.set_progress(0)
+        self.progress_percent.setText("0%")
+        self.progress_status.setText("GOTOWY")
+
     def generate_preview(self):
+        self._planned_operations.clear()
         source = self.source_input.text().strip()
         target = self.target_input.text().strip()
         semester_id = self.semester_combo.currentData()
-        self.update_preview_progress(0)
-        self.progress_status.setText("ANALIZA...")
 
         if not source or not Path(source).is_dir():
             QMessageBox.warning(
@@ -1604,7 +1736,8 @@ class TestWindow(QWidget):
             return
 
         try:
-            semester = load_semesters()["semesters"][semester_id]
+            data = load_semesters()
+            semester = data["semesters"][semester_id]
             known_subjects = load_subjects()
 
             subject_folders = {
@@ -1615,29 +1748,39 @@ class TestWindow(QWidget):
 
         except (KeyError, ValueError, OSError) as error:
             QMessageBox.critical(
-                self, "Błąd konfiguracji", str(error)
+                self,
+                "Błąd konfiguracji",
+                str(error)
             )
             return
+
         self._preview_context = (
             source,
             target,
             semester_id
         )
-
         self._preview_subjects = subject_folders.copy()
+        self._preview_invalidated = False
 
         self.update_preview_progress(0)
         self.progress_status.setText("ANALIZA...")
 
         self.preview_button.setEnabled(False)
+        self.apply_button.setEnabled(False)
+
         self.preview_summary.setText("ANALIZA...")
         self.preview_table.hide()
-        self.preview_empty.setText("Trwa analiza plików...")
-        self.preview_empty.show()
-        self.preview_worker = PreviewWorker(
-            source, target, subject_folders
-        )
 
+        self.preview_empty.setText(
+            "Trwa analiza plików..."
+        )
+        self.preview_empty.show()
+
+        self.preview_worker = PreviewWorker(
+            source,
+            target,
+            subject_folders
+        )
         self.preview_worker.progress_changed.connect(
             self.update_preview_progress
         )
@@ -1656,20 +1799,35 @@ class TestWindow(QWidget):
 
         self.preview_worker.start()
 
+#Zdecydowanie za duzo tego kodu kurna zaraz mnie cos strzeli ale juz dokoncze
     def show_preview_results(self, operations, result):
         current_context = (
             self.source_input.text().strip(),
             self.target_input.text().strip(),
             self.semester_combo.currentData()
         )
-        self.progress_status.setText("GOTOWY")
 
-        if current_context != self._preview_context:
-            self.preview_summary.setText("NIEAKTUALNY PLAN")
-            self.preview_empty.setText(
-                "Zmieniono folder lub semestr.\n"
-                "Uruchom podgląd ponownie."
-            )
+        if (
+            self._preview_invalidated
+            or current_context != self._preview_context
+        ):
+            self.invalidate_preview()
+            return
+
+        self._planned_operations = [
+            operation.copy() for operation in operations
+        ]
+
+        self.progress_status.setText("GOTOWY")
+        self._planned_operations = [
+            operation.copy() for operation in operations
+        ]
+
+        if (
+            self._preview_invalidated
+            or current_context != self._preview_context
+        ):
+            self.invalidate_preview()
             return
 
         self.preview_table.setRowCount(len(operations))
@@ -1713,6 +1871,7 @@ class TestWindow(QWidget):
         if operations:
             self.preview_empty.hide()
             self.preview_table.show()
+            self.apply_button.setEnabled(True)
         else:
             self.preview_table.hide()
             self.preview_empty.setText(
@@ -1720,8 +1879,11 @@ class TestWindow(QWidget):
                 "Sprawdź nazwy plików i przypisane przedmioty."
             )
             self.preview_empty.show()
+            self.apply_button.setEnabled(False)
 
     def show_preview_error(self, message):
+        if self._preview_invalidated:
+            return
         self.progress_status.setText("BŁĄD")
         self.preview_summary.setText("BŁĄD")
         self.preview_table.hide()
@@ -1732,6 +1894,283 @@ class TestWindow(QWidget):
 
     def preview_finished(self):
         self.preview_button.setEnabled(True)
+
+    def check_move_plan(self):
+        if self._move_in_progress:
+            return
+
+        preview_worker = getattr(self, "preview_worker", None)
+
+        if preview_worker is not None and preview_worker.isRunning():
+            QMessageBox.information(
+                self,
+                "Analiza w toku",
+                "Poczekaj na zakończenie podglądu."
+            )
+            return
+
+        if (
+            self._preview_invalidated
+            or self._preview_context is None
+            or not self._planned_operations
+        ):
+            QMessageBox.warning(
+                self,
+                "Nieaktualny plan",
+                "Najpierw wygeneruj aktualny podgląd."
+            )
+            return
+
+        source, target, semester_id = self._preview_context
+
+        current_context = (
+            self.source_input.text().strip(),
+            self.target_input.text().strip(),
+            self.semester_combo.currentData(),
+        )
+
+        if current_context != self._preview_context:
+            self.invalidate_preview()
+            return
+        try:
+            semester = load_semesters()["semesters"][semester_id]
+            subjects = load_subjects()
+
+            current_subjects = {
+                code: subjects[code]
+                for code in semester.get("subjects", [])
+                if code in subjects
+            }
+
+            if (
+                current_subjects != self._preview_subjects
+                or Path(semester["target"]).resolve()
+                != Path(target).resolve()
+            ):
+                self.invalidate_preview()
+                QMessageBox.warning(
+                    self,
+                    "Nieaktualny plan",
+                    "Konfiguracja semestru uległa zmianie."
+                )
+                return
+
+            source_root = Path(source).resolve()
+            target_root = Path(target).resolve()
+
+            if not source_root.is_dir() or not target_root.is_dir():
+                raise ValueError(
+                    "Folder źródłowy lub docelowy jest niedostępny."
+                )
+
+            destinations = set()
+
+            for operation in self._planned_operations:
+                source_file = Path(operation["source"])
+                target_file = Path(operation["target"])
+
+                if source_file.parent.resolve() != source_root:
+                    raise ValueError(
+                        "Plan zawiera plik spoza folderu źródłowego."
+                    )
+
+                if not target_file.resolve().is_relative_to(
+                    target_root
+                ):
+                    raise ValueError(
+                        "Plan zawiera niedozwoloną ścieżkę docelową."
+                    )
+
+                destination_key = str(
+                    target_file.resolve()
+                ).casefold()
+
+                if destination_key in destinations:
+                    raise ValueError(
+                        "Plan zawiera powtarzające się ścieżki docelowe."
+                    )
+
+                destinations.add(destination_key)
+
+                valid, reason = validate_planned_operation(
+                    operation
+                )
+
+                if not valid:
+                    raise ValueError(
+                        f"{operation['filename']}: {reason}"
+                    )
+
+        except (KeyError, ValueError, OSError) as error:
+            self.invalidate_preview()
+
+            QMessageBox.warning(
+                self,
+                "Plan wymaga ponownej analizy",
+                str(error)
+            )
+            return
+
+        count = len(self._planned_operations)
+
+        answer = QMessageBox.question(
+            self,
+            "Potwierdź przenoszenie",
+            f"Przenieść {count} plików?\n\n"
+            f"Źródło:\n{source}\n\n"
+            f"Cel:\n{target}\n\n"
+            "Istniejące pliki nie będą nadpisywane.\n"
+            "Operacja zmieni lokalizację plików.",
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._move_in_progress = True
+        self.sidebar.setEnabled(False)
+        self.folders_section.setEnabled(False)
+        self.preview_button.setEnabled(False)
+        self.apply_button.setEnabled(False)
+        self.progress_bar.set_progress(0)
+        self.progress_percent.setText("0%")
+        self.progress_status.setText("PRZENOSZENIE...")
+        self.preview_summary.setText("PRZENOSZENIE...")
+
+        self.preview_table.hide()
+        self.preview_empty.setText(
+            "Trwa przenoszenie zaplanowanych plików..."
+        )
+        self.preview_empty.show()
+
+        operations = [
+            operation.copy()
+            for operation in self._planned_operations
+        ]
+
+        self.move_worker = MoveWorker(
+            operations,
+            source_root,
+            target_root,
+        )
+
+        self.move_worker.progress_changed.connect(
+            self.update_move_progress
+        )
+        self.move_worker.move_completed.connect(
+            self.show_move_results
+        )
+        self.move_worker.move_failed.connect(
+            self.show_move_error
+        )
+        self.move_worker.finished.connect(
+            self.finish_move
+        )
+
+        self.move_worker.start()
+
+
+    def update_move_progress(self, value):
+        self.progress_bar.set_progress(value)
+        self.progress_percent.setText(f"{value}%")
+
+    def show_move_results(self, results, summary):
+        moved = summary["moved"]
+        failed = summary["failed"]
+        total = summary["total"]
+
+        self._planned_operations.clear()
+        self._preview_invalidated = True
+        self._preview_context = None
+
+        self.apply_button.setEnabled(False)
+        self.preview_table.setRowCount(0)
+        self.preview_table.hide()
+
+        self.progress_bar.set_progress(100)
+        self.progress_percent.setText("100%")
+
+        if failed:
+            self.progress_status.setText("Z BŁĘDAMI")
+        else:
+            self.progress_status.setText("ZAKOŃCZONO")
+
+        self.preview_summary.setText(
+            f"{moved} PRZENIESIONE · {failed} BŁĘDÓW"
+        )
+
+        self.preview_empty.setText(
+            "Operacja zakończona.\n"
+            "Wygeneruj nowy podgląd, aby sprawdzić pozostałe pliki."
+        )
+        self.preview_empty.show()
+
+        report = (
+            f"Przetworzono: {total}\n"
+            f"Przeniesiono: {moved}\n"
+            f"Nieudane operacje: {failed}"
+        )
+
+        if failed:
+            failures = [
+                f"{item['filename']}: {item['message']}"
+                for item in results
+                if not item["success"]
+            ]
+
+            report += "\n\nPierwsze błędy:\n"
+            report += "\n".join(failures[:5])
+
+            if len(failures) > 5:
+                report += (
+                    f"\n... i {len(failures) - 5} kolejnych."
+                )
+
+            QMessageBox.warning(
+                self,
+                "Przenoszenie zakończone z błędami",
+                report
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Przenoszenie zakończone",
+                report
+            )
+
+    def show_move_error(self, message):
+        self._planned_operations.clear()
+        self._preview_invalidated = True
+        self._preview_context = None
+
+        self.apply_button.setEnabled(False)
+        self.preview_table.setRowCount(0)
+        self.preview_table.hide()
+
+        self.progress_status.setText("BŁĄD")
+        self.preview_summary.setText("OPERACJA PRZERWANA")
+
+        self.preview_empty.setText(
+            "Wystąpił błąd.\n"
+            "Sprawdź stan plików przed ponowną analizą."
+        )
+        self.preview_empty.show()
+
+        QMessageBox.critical(
+            self,
+            "Błąd przenoszenia",
+            message
+        )
+
+    def finish_move(self):
+        self._move_in_progress = False
+
+        self.sidebar.setEnabled(True)
+        self.folders_section.setEnabled(True)
+        self.preview_button.setEnabled(True)
+        self.apply_button.setEnabled(False)
 
 
     def start_drag(self, event):
@@ -1744,21 +2183,20 @@ class TestWindow(QWidget):
         else:
             self.showMaximized()
 
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
 
-app = QApplication(sys.argv)
+    INTER = load_font("Inter_18pt-Regular.ttf")
+    load_font("Inter_18pt-Medium.ttf")
 
-INTER = load_font("Inter_18pt-Regular.ttf")
-load_font("Inter_18pt-Medium.ttf")
+    MANROPE = load_font("Manrope-Medium.ttf")
+    MANROPE_SEMIBOLD = load_font("Manrope-SemiBold.ttf")
 
-MANROPE = load_font("Manrope-Medium.ttf")
-MANROPE_SEMIBOLD = load_font("Manrope-SemiBold.ttf")
+    font = QFont(INTER)
+    font.setPixelSize(13)
+    app.setFont(font)
 
-font = QFont(INTER)
-font.setPixelSize(13)
+    window = TestWindow()
+    window.show()
 
-app.setFont(font)
-
-window = TestWindow()
-window.show()
-
-sys.exit(app.exec())
+    sys.exit(app.exec())
