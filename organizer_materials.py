@@ -3,10 +3,6 @@ from datetime import datetime
 from pathlib import Path
 from subjects import load_subjects
 
-source_folder = Path(r"G:\Mój dysk")
-target_root = Path(r"G:\Mój dysk\STUDIA\2026-2027\Semestr 1")
-
-
 def parse_date(date_text):
     try:
         return datetime.strptime(date_text, "%d.%m.%Y")
@@ -312,15 +308,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--source",
         type=Path,
-        default=source_folder,
+        required=True,
         help="Folder z plikami do uporzadkowania"
     )
+
     parser.add_argument(
         "--target",
         type=Path,
-        default=target_root,
+        required=True,
         help="Folder docelowy semestru"
     )
+
     args = parser.parse_args()
 
     if args.apply:
@@ -328,6 +326,7 @@ if __name__ == "__main__":
             "Tryb --apply jest tymczasowo wyłączony. "
             "Użyj aplikacji Materials Organizer."
         )
+    
 
     organize_files(
         args.source,

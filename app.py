@@ -1,5 +1,3 @@
-from email import header
-from operator import index
 from uuid import uuid4
 import sys
 from PySide6.QtWidgets import (
@@ -9,7 +7,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
 )
 from PySide6.QtCore import (
-    QRectF, QPointF, Qt, QEvent,
+    QRectF, QPointF, Qt,
     QSettings, QThread, Signal
 )
 from PySide6.QtGui import (
@@ -19,7 +17,7 @@ from PySide6.QtGui import (
 from pathlib import Path
 from ctypes import wintypes
 from ui_theme import (
-    BACKGROUND, SURFACE, RAISED, BORDER,
+    BACKGROUND, SURFACE, BORDER,
     TEXT_PRIMARY, TEXT_MUTED, TEXT_SECONDARY
 )
 from semesters import (
