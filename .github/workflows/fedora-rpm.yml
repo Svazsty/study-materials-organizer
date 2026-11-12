@@ -103,7 +103,7 @@ jobs:
           Requires: libxkbcommon-x11, xcb-util-cursor
           Requires: xcb-util-image, xcb-util-keysyms
           Requires: xcb-util-renderutil, xcb-util-wm
-          Requires: fontconfig, libglvnd-glx
+          Requires: fontconfig, libglvnd-glx, libglvnd-egl
 
           %description
           A desktop application for organizing university study materials.
