@@ -326,7 +326,6 @@ if __name__ == "__main__":
             "Tryb --apply jest tymczasowo wyłączony. "
             "Użyj aplikacji Materials Organizer."
         )
-    
 
     organize_files(
         args.source,
