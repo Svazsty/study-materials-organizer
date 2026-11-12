@@ -3,7 +3,5 @@ name = "study-materials-organizer"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "customtkinter>=6.0.0",
-    "pillow>=13.0.0",
     "pyside6>=6.12.0",
 ]

@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from PySide6.QtCore import QCoreApplication, QTimer
 from organizer_materials import organize_files
-from window_test import MoveWorker
+from app import MoveWorker
 
 with TemporaryDirectory() as temporary:
     root = Path(temporary)
