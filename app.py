@@ -12,7 +12,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor, QPainter, QPixmap, QRadialGradient, QCursor,
-    QPen, QFont, QFontDatabase
+    QPen, QFont, QFontDatabase, QIcon
 )
 from pathlib import Path
 from ctypes import wintypes
@@ -2193,6 +2193,9 @@ if __name__ == "__main__":
     font = QFont(INTER)
     font.setPixelSize(13)
     app.setFont(font)
+    app.setWindowIcon(
+        QIcon(str(Path(__file__).resolve().parent / "assets" / "Mo_logo.png"))
+    )
 
     window = TestWindow()
     window.show()
