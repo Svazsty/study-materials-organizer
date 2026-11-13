@@ -1,226 +1,84 @@
-# Study Materials Organizer
+<div align="center">
+  <img src="assets/Mo_logo.png" alt="Materials Organizer" width="100">
 
-A lightweight Python desktop application for organizing
-university study materials based on filenames.
+  <h1>Materials Organizer</h1>
 
-The application provides both a graphical interface (Tkinter)
-and a command-line interface (CLI).
+  <p>A minimal desktop application for organizing university study materials.</p>
 
-Users can preview planned file operations before moving
-files into organized semester directories.
+  <p><strong>Python · PySide6 · PUNQTA / FERRUM</strong></p>
+
+  <p>
+    <a href="https://github.com/Svazsty/study-materials-organizer/releases/download/v0.2.0/MaterialsOrganizer-v0.2.0-Windows-x64.zip">Download for Windows</a>
+    &nbsp; · &nbsp;
+    <a href="https://github.com/Svazsty/study-materials-organizer/releases/download/v0.2.0/MaterialsOrganizer-v0.2.0-Fedora-x64.zip">Download for Fedora</a>
+  </p>
+</div>
+
+---
+
+![Materials Organizer interface](assets/screenshots/materials-organizer.png)
 
 ## Features
 
-- Graphical interface built with Tkinter.
-- Preview file operations before applying changes.
-- Organize files by subject, date, class type and group.
-- Background file operations using threading.
-- Progress bar based on processed files.
-- Automatically remember recently selected directories.
-- Detect unknown subjects and add them through the GUI.
-- Store subject definitions in subjects.json.
-- Prevent overwriting existing destination files.
-- Command-line interface support.
+- **Automatic organization** — sort study materials by subject, date, lecture or exercise.
+- **Preview before moving** — review destination paths before confirming.
+- **Semester & subject management** — customize your courses and folders.
+- **Safe file operations** — conflict detection, file validation and background processing.
+- **Minimal interface** — lightweight desktop GUI with the PUNQTA / FERRUM visual identity.
 
-## Requirements
+## Installation
 
-- Python 3.13 or newer (tested on Windows with Python 3.14).
-- No third-party packages are required; the tool uses the Python standard library.
+**Windows**
 
-The source folder must already exist. Run the following commands from the directory containing `organizer_materials.py`.
+Download the Portable ZIP, extract it and launch `MaterialsOrganizer.exe`.
 
+**Fedora Linux**
 
-## Graphical Interface
+Download the Fedora ZIP, extract the included RPM package and install it using:
 
-Launch the desktop application:
-
-```powershell
-python gui.py
+```bash
+sudo dnf install ./materials-organizer-*.rpm
 ```
 
-### How to use
+No separate Python installation is required.
 
-1. Select a source directory containing study materials.
-2. Select the destination semester directory.
-3. Click **Preview** to review planned file operations.
-4. Click **Apply Moves** to move files after confirmation.
+## Filename format
 
-The application moves files rather than copying them. Existing destination files are not overwritten.
-
-### Progress and background operations
-
-File operations run in a background thread to keep the GUI responsive.
-
-The progress bar displays the percentage of processed files, not the percentage of bytes transferred.
-
-### Saved settings
-
-The application automatically remembers the last selected source and destination directories.
-
-Settings are stored in:
-
-`~/.study-materials-organizer/settings.json`
-
-### Subject management
-
-Subject definitions are stored in `subjects.json`.
-
-When Preview detects an unknown subject code, the application can ask for its full name and save it for future use.
-
-After adding a subject, run Preview again to update the planned file operations.
-
-
-## Usage
-
-### Preview changes
-
-Choose a source folder containing your materials and a target folder representing the root of a semester:
-
-```powershell
-python organizer_materials.py --source "incoming" --target "organized"
-```
-
-This prints the planned moves. It leaves the source files in place and does not create target folders.
-
-### Move files
-
-After reviewing the preview, run the same command with `--apply`:
-
-```powershell
-python organizer_materials.py --source "incoming" --target "organized" --apply
-```
-
-A successful move removes the file from the source folder and places it in the destination folder.
-
-### Help
-
-```powershell
-python organizer_materials.py --help
-```
-
-| Argument | Purpose |
-| --- | --- |
-| `--source PATH` | Folder containing files to organize |
-| `--target PATH` | Root of the destination semester folder |
-| `--apply` | Perform moves instead of previewing them |
-| `--help` | Show command-line help |
-
-Quote paths containing spaces. Relative paths are resolved from the terminal's current working directory.
-
-### Personal defaults
-
-If `--source` or `--target` is omitted, the script uses its configured defaults:
-
-- Source: `G:\Mój dysk`
-- Target: `G:\Mój dysk\STUDIA\2026-2027\Semestr 1`
-
-To use different locations, pass the arguments above or edit `source_folder` and `target_root` near the top of the script. Running without arguments previews the default locations; running with only `--apply` moves files using those defaults.
-
-## Filename conventions
-
-Lecture:
+Materials are classified using their filenames.
 
 ```text
-DD.MM.YYYY_WNN[A]_subject[_description].ext
+DD.MM.YYYY_W01_subject_description.pdf
+DD.MM.YYYY_C01_G1_subject_description.pdf
 ```
 
-Exercise:
+For example:
 
 ```text
-DD.MM.YYYY_CNN[A]_Gnumber_subject[_description].ext
+12.11.2026_W01_algebra_notes.pdf
+12.11.2026_C01_G1_algebra_exercises.pdf
 ```
 
-Square brackets indicate optional parts; do not include the brackets in filenames.
+`W` indicates a lecture, `C` an exercise, and `G1` the exercise group.
 
-- `DD.MM.YYYY`: the date of the class.
-- `W` / `C`: lecture / exercise.
-- `NN`: a two-digit session number, for example `01` or `02`.
-- `A`: an optional uppercase part letter, such as `A`, `B`, or `C`.
-- `Gnumber`: `G1` or `G2`, required for exercises.
-- `subject`: a configured subject code, listed below.
-- `description`: optional text, which may contain underscores.
-- `.ext`: the original file extension, such as `.aac`, `.mp4`, `.pdf`, or `.md`.
+## Run from source
 
-Use lowercase subject codes. Put the subject code before the description.
+Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
 
-Examples:
-
-```text
-03.10.2026_W01A_algebra_liczby_zespolone.aac
-23.10.2026_W02B_ekonomia.mp4
-18.10.2026_W02_algebra_notatki_zeszyt.pdf
-17.10.2026_C01_G2_ekonomia_mikroekonomia.aac
+```bash
+git clone https://github.com/Svazsty/study-materials-organizer.git
+cd study-materials-organizer
+uv sync
+uv run python app.py
 ```
 
-### Configured subjects
+## Notes
 
-| Code | Destination subject folder |
-| --- | --- |
-| `algebra` | Algebra liniowa |
-| `ekonomia` | Podstawy ekonomii |
-| `logika` | Algorytmy i podstawy logiki |
-| `prawo` | Prawo gospodarcze |
-| `rozniczkowy` | Układ różniczkowy |
-| `ti` | Technologie informacyjne |
-| `zarzadzanie` | Podstawy zarządzania |
+The organizer moves files, rather than permanently duplicating them. Use the preview to verify destinations and keep backups of important materials.
 
-Subjects are loaded from subjects.json.
-
-New subjects can be added through the graphical interface
-or manually by editing subjects.json.
-
-## Destination structure
-
-Lecture example, relative to `--target`:
-
-```text
-Wyklady/Algebra liniowa/03.10.2026_W01/03.10.2026_W01A_algebra_liczby_zespolone.aac
-```
-
-Exercise example:
-
-```text
-Cwiczenia/Podstawy ekonomii/grupa_2/17.10.2026_C01/17.10.2026_C01_G2_ekonomia_mikroekonomia.aac
-```
-
-An existing common session folder such as `16.10.2026_W02` takes priority. If it does not exist, the tool checks for a folder matching the complete class code, such as `16.10.2026_W02A`. If only other part folders exist, the file is skipped for manual review. Otherwise, a new common session folder is planned and created when applying changes.
-
-## Skipped files and limitations
-
-- Only files directly inside the source folder are inspected; subfolders are skipped.
-- Classification uses filenames and folder names, not document or recording contents.
-- Invalid dates, unsupported class codes, unknown subjects, and missing or unsupported groups are skipped.
-- Filenames containing `do_weryfikacji`, case-insensitively, are skipped.
-- Existing destination paths are skipped without comparing file contents.
-- Exercise groups are currently limited to `G1` and `G2`.
-- General materials without a session date require manual organization.
-
-Invalid or unsupported filenames count as skipped files. Failed move operations count as errors in the summary.
-
-## Tests
-
-Run the automated tests:
-
-```powershell
-python -m unittest -v
-```
-
-The project currently includes 10 automated tests.
-
-The tests cover:
-- Date validation.
-- Preview operations without modifying files.
-- Moving files and preserving their contents.
-- Preventing overwriting existing files.
-- Progress callback reporting.
-- Unknown subject detection.
-- Adding new subjects.
-- Preventing duplicate subject codes.
-- Rejecting invalid subject names.
-
-File operation tests use temporary directories to avoid
-modifying real study materials.
+Only supported filename patterns are processed.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+Source code: [MIT License](LICENSE).
+
+PUNQTA / FERRUM branding and bundled font assets are subject to their respective usage permissions.
