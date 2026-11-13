@@ -1227,23 +1227,36 @@ class TestWindow(QWidget):
         w = self.width()
         h = self.height()
 
-        margin = 16
-        corner = 26
+        side = 12
+        bottom = 12
+        corner = 22
+        top = 6
+        header = self.titlebar.height()
 
         geometry = {
-            "top": (corner, 0, w - 2 * corner, margin),
+            "top": (
+                corner, 0, w - 2 * corner, top
+            ),
             "bottom": (
-                corner, h - margin,
-                w - 2 * corner, margin
+                corner, h - bottom,
+                w - 2 * corner, bottom
             ),
-            "left": (0, corner, margin, h - 2 * corner),
+            "left": (
+                0, header, side, h - header - corner
+            ),
             "right": (
-                w - margin, corner,
-                margin, h - 2 * corner
+                w - side, header,
+                side, h - header - corner
             ),
-            "top_left": (0, 0, corner, corner),
-            "top_right": (w - corner, 0, corner, corner),
-            "bottom_left": (0, h - corner, corner, corner),
+            "top_left": (
+                0, 0, corner, top
+            ),
+            "top_right": (
+                w - corner, 0, corner, top
+            ),
+            "bottom_left": (
+                0, h - corner, corner, corner
+            ),
             "bottom_right": (
                 w - corner, h - corner,
                 corner, corner

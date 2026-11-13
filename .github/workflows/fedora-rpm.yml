@@ -107,7 +107,7 @@ jobs:
 
           Name: materials-organizer
           Version: 0.1.0
-          Release: 2%{?dist}
+          Release: 3%{?dist}
           Summary: Desktop organizer for study materials
           License: MIT
           BuildArch: x86_64
