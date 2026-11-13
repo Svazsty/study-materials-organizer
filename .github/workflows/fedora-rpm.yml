@@ -102,6 +102,9 @@ jobs:
             -C stage materials-organizer-0.1.0
 
           cat > rpmbuild/SPECS/materials-organizer.spec <<'EOF'
+          # PyInstaller bundles prebuilt binaries; no useful debugsource package.
+          %global debug_package %{nil}
+
           Name: materials-organizer
           Version: 0.1.0
           Release: 1%{?dist}
