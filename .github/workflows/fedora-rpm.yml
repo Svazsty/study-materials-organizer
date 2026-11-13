@@ -28,14 +28,23 @@ jobs:
             libxkbcommon-x11 xcb-util-cursor \
             mesa-libGL fontconfig
       
-        - name: Install Fedora build dependencies
-          run: |
-            dnf install -y \
-              curl tar gzip rpm-build \
-              gcc binutils patchelf \
-              libX11 libxcb libxkbcommon \
-              libxkbcommon-x11 xcb-util-cursor \
-              mesa-libGL libglvnd-egl fontconfig
+      - name: Install Fedora build dependencies
+        run: |
+          dnf install -y \
+            curl tar gzip rpm-build \
+            gcc binutils patchelf \
+            libX11 libxcb libxkbcommon \
+            libxkbcommon-x11 xcb-util-cursor \
+            mesa-libGL libglvnd-egl fontconfig
+
+      - name: Install Fedora build dependencies
+        run: |
+          dnf install -y \
+            curl tar gzip rpm-build \
+            gcc binutils patchelf \
+            libX11 libxcb libxkbcommon \
+            libxkbcommon-x11 xcb-util-cursor \
+            mesa-libGL libglvnd-egl dbus-libs fontconfig
 
       - name: Install uv
         run: |
@@ -46,6 +55,9 @@ jobs:
         run: |
           uv python install 3.13
           uv sync --python 3.13 --frozen
+      - name: Check Qt libraries
+        run: |
+          uv run python -c "import PySide6.QtWidgets; print('QtWidgets import OK')"
 
       - name: Run tests
         run: uv run python -m unittest discover -s tests -v
@@ -90,9 +102,12 @@ jobs:
             -C stage materials-organizer-0.1.0
 
           cat > rpmbuild/SPECS/materials-organizer.spec <<'EOF'
+          # PyInstaller bundles prebuilt binaries; no useful debugsource package.
+          %global debug_package %{nil}
+
           Name: materials-organizer
           Version: 0.1.0
-          Release: 1%{?dist}
+          Release: 3%{?dist}
           Summary: Desktop organizer for study materials
           License: MIT
           BuildArch: x86_64
@@ -104,6 +119,7 @@ jobs:
           Requires: xcb-util-image, xcb-util-keysyms
           Requires: xcb-util-renderutil, xcb-util-wm
           Requires: fontconfig, libglvnd-glx, libglvnd-egl
+          Requires: dbus-libs
 
           %description
           A desktop application for organizing university study materials.
