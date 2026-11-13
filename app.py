@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
 )
 from PySide6.QtCore import (
-    QRectF, QPointF, Qt,
+    QRectF, QPointF, Qt, QEvent,
     QSettings, QThread, Signal
 )
 from PySide6.QtGui import (
@@ -1147,6 +1147,49 @@ class TestWindow(QWidget):
             lambda event: self.toggle_maximize()
         )
         self.refresh_subjects()
+        QApplication.instance().installEventFilter(self)
+
+    
+    def eventFilter(self, obj, event):
+        if (
+            sys.platform == "win32"
+            or event.type() != QEvent.Type.MouseButtonPress
+            or event.button() != Qt.MouseButton.LeftButton
+            or not isinstance(obj, QWidget)
+            or obj.window() is not self
+            or self.isMaximized()
+            or self.isMinimized()
+        ):
+            return super().eventFilter(obj, event)
+
+        pos = self.mapFromGlobal(
+            event.globalPosition().toPoint()
+        )
+
+        x, y = pos.x(), pos.y()
+        width, height = self.width(), self.height()
+        margin = 10
+
+        edges = Qt.Edge(0)
+
+        if 0 <= x < margin:
+            edges |= Qt.Edge.LeftEdge
+        elif width - margin <= x < width:
+            edges |= Qt.Edge.RightEdge
+
+        if 0 <= y < margin:
+            edges |= Qt.Edge.TopEdge
+        elif height - margin <= y < height:
+            edges |= Qt.Edge.BottomEdge
+
+        if edges:
+            handle = self.windowHandle()
+
+            if handle and handle.startSystemResize(edges):
+                return True
+
+        return super().eventFilter(obj, event)
+
 
     def nativeEvent(self, eventType, message):
         if (
