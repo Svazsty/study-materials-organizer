@@ -316,6 +316,26 @@ class MoveWorker(QThread):
         except Exception as error:
             self.move_failed.emit(str(error))
 
+
+class ResizeHandle(QWidget):
+    def __init__(self, parent, edges, cursor):
+        super().__init__(parent)
+        self.edges = edges
+        self.setCursor(cursor)
+        self.setStyleSheet(
+            "background: transparent; border: none;"
+        )
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            window = self.window().windowHandle()
+
+            if window and window.startSystemResize(self.edges):
+                event.accept()
+                return
+
+        super().mousePressEvent(event)
+
 class TestWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -1147,49 +1167,104 @@ class TestWindow(QWidget):
             lambda event: self.toggle_maximize()
         )
         self.refresh_subjects()
-        QApplication.instance().installEventFilter(self)
+        if sys.platform != "win32":
+            self.create_resize_handles()
 
-    
-    def eventFilter(self, obj, event):
-        if (
-            sys.platform == "win32"
-            or event.type() != QEvent.Type.MouseButtonPress
-            or event.button() != Qt.MouseButton.LeftButton
-            or not isinstance(obj, QWidget)
-            or obj.window() is not self
-            or self.isMaximized()
-            or self.isMinimized()
-        ):
-            return super().eventFilter(obj, event)
+    def create_resize_handles(self):
+        specs = {
+            "top": (
+                Qt.Edge.TopEdge,
+                Qt.CursorShape.SizeVerCursor
+            ),
+            "bottom": (
+                Qt.Edge.BottomEdge,
+                Qt.CursorShape.SizeVerCursor
+            ),
+            "left": (
+                Qt.Edge.LeftEdge,
+                Qt.CursorShape.SizeHorCursor
+            ),
+            "right": (
+                Qt.Edge.RightEdge,
+                Qt.CursorShape.SizeHorCursor
+            ),
+            "top_left": (
+                Qt.Edge.TopEdge | Qt.Edge.LeftEdge,
+                Qt.CursorShape.SizeFDiagCursor
+            ),
+            "top_right": (
+                Qt.Edge.TopEdge | Qt.Edge.RightEdge,
+                Qt.CursorShape.SizeBDiagCursor
+            ),
+            "bottom_left": (
+                Qt.Edge.BottomEdge | Qt.Edge.LeftEdge,
+                Qt.CursorShape.SizeBDiagCursor
+            ),
+            "bottom_right": (
+                Qt.Edge.BottomEdge | Qt.Edge.RightEdge,
+                Qt.CursorShape.SizeFDiagCursor
+            ),
+        }
 
-        pos = self.mapFromGlobal(
-            event.globalPosition().toPoint()
-        )
+        self._resize_handles = {}
 
-        x, y = pos.x(), pos.y()
-        width, height = self.width(), self.height()
-        margin = 10
+        for name, (edges, cursor) in specs.items():
+            self._resize_handles[name] = ResizeHandle(
+                self, edges, cursor
+            )
 
-        edges = Qt.Edge(0)
+        self.position_resize_handles()
 
-        if 0 <= x < margin:
-            edges |= Qt.Edge.LeftEdge
-        elif width - margin <= x < width:
-            edges |= Qt.Edge.RightEdge
+    def position_resize_handles(self):
+        if not hasattr(self, "_resize_handles"):
+            return
 
-        if 0 <= y < margin:
-            edges |= Qt.Edge.TopEdge
-        elif height - margin <= y < height:
-            edges |= Qt.Edge.BottomEdge
+        if self.isMaximized() or self.isFullScreen():
+            for handle in self._resize_handles.values():
+                handle.hide()
+            return
 
-        if edges:
-            handle = self.windowHandle()
+        w = self.width()
+        h = self.height()
 
-            if handle and handle.startSystemResize(edges):
-                return True
+        margin = 16
+        corner = 26
 
-        return super().eventFilter(obj, event)
+        geometry = {
+            "top": (corner, 0, w - 2 * corner, margin),
+            "bottom": (
+                corner, h - margin,
+                w - 2 * corner, margin
+            ),
+            "left": (0, corner, margin, h - 2 * corner),
+            "right": (
+                w - margin, corner,
+                margin, h - 2 * corner
+            ),
+            "top_left": (0, 0, corner, corner),
+            "top_right": (w - corner, 0, corner, corner),
+            "bottom_left": (0, h - corner, corner, corner),
+            "bottom_right": (
+                w - corner, h - corner,
+                corner, corner
+            ),
+        }
 
+        for name, rect in geometry.items():
+            handle = self._resize_handles[name]
+            handle.setGeometry(*rect)
+            handle.show()
+            handle.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.position_resize_handles()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+
+        if event.type() == QEvent.Type.WindowStateChange:
+            self.position_resize_handles()
 
     def nativeEvent(self, eventType, message):
         if (
