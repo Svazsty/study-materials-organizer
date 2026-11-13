@@ -28,14 +28,14 @@ jobs:
             libxkbcommon-x11 xcb-util-cursor \
             mesa-libGL fontconfig
       
-        - name: Install Fedora build dependencies
-          run: |
-            dnf install -y \
-              curl tar gzip rpm-build \
-              gcc binutils patchelf \
-              libX11 libxcb libxkbcommon \
-              libxkbcommon-x11 xcb-util-cursor \
-              mesa-libGL libglvnd-egl fontconfig
+      - name: Install Fedora build dependencies
+        run: |
+          dnf install -y \
+            curl tar gzip rpm-build \
+            gcc binutils patchelf \
+            libX11 libxcb libxkbcommon \
+            libxkbcommon-x11 xcb-util-cursor \
+            mesa-libGL libglvnd-egl fontconfig
 
       - name: Install uv
         run: |
